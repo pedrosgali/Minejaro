@@ -1,0 +1,166 @@
+local scr = require("screen")
+local event = require("event")
+local shell = require("shell")
+local fs = require("filesystem")
+local term = require("term")
+local comp = require("component")
+local keyboard = require("keyboard")
+local gpu = comp.gpu
+local localPath = shell.getWorkingDirectory()
+local col = 0x009999
+local bCol = 0xFFFFFF
+local tCol = 0x000000
+local running = true
+local fsx, fsy = gpu.getResolution()
+
+local arg = {...}
+local path = arg[1]
+
+local p = fs.path(path)
+
+if fs.isDirectory(p) then
+    fs.makeDirectory(p)
+end
+if not fs.exists(path) then
+    local data = io.open(path, "w")
+    data:write(" ")
+    data:close()
+end
+
+local np = scr:newPane(np, 60, 30)
+np.selected = true
+np.priority = 9
+np.label = fs.name(path).." - Ate"
+np.isPane = true
+np.colour = col
+np.path = path
+np.fsx = fsx
+np.fsy = fsy
+np.needRender = true
+np.isMax = false
+np:center()
+np:box(1, 1, np.width, np.height, 0x999999, "scale")
+np:box(1, 1, np.width, 1, col, "scale")
+np:centerText(1, 1, np.width, col, 0x000000, np.label)
+np:button("X", np.width - 2, 1, 3, 1, 0xCCCCCC, "close_me")
+np:button("^", np.width - 5, 1, 3, 1, 0xCCCCCC, "scale_me")
+np:button("_", np.width - 7, 1, 3, 1, 0xCCCCCC, "shrink_me")
+np:inputBox("mainText", 2, 3, np.width - 2, np.height - 3, "scale", bCol, tCol)
+np:addSubMenu("File")
+--np:addSubMenuItem("File", "New", "new_np")
+np:addSubMenuItem("File", "Save", "save_np")
+--np:addSubMenuItem("File", "Load", "load_np")
+np:addSubMenuItem("File", "Exit", "close_me")
+--np:addSubMenu("Edit")
+--np:addSubMenuItem("Edit", "Undo", "Undo")
+np:text(1, np.height, 0x999999, 0x000000, "Version 0.1")
+np.id = #st + 1
+np:loadText("mainText", path)
+
+function np:resetText()
+    self.printTab = nil
+    np:centerText(1, 1, np.width, col, 0x000000, np.label)
+    np:text(1, np.height, 0x999999, 0x000000, "Version 0.1")
+end
+
+function np:addScrollBar()
+    self.buttonTab = nil
+    self:button("X", np.width - 2, 1, 3, 1, 0xCCCCCC, "close_me")
+    self:button("^", np.width - 5, 1, 3, 1, 0xCCCCCC, "scale_me")
+    self:button("_", np.width - 7, 1, 3, 1, 0xCCCCCC, "shrink_me")
+    if #self.textInputs[1]["text"] > self.textInputs[1]["height"] then
+        self:button("^", self.textInputs[1]["width"] - 1, self.textInputs[1]["yPos"] + 1, 3, 1, 0x666666, "scroll_up")
+        self:button(" ", self.textInputs[1]["width"] - 1, self.textInputs[1]["yPos"] + 2, 3, self.textInputs[1]["height"] - 2, 0xCCCCCC, "scroll_toggle")
+        self:button("v", self.textInputs[1]["width"] - 1, self.textInputs[1]["yPos"] + self.textInputs[1]["height"], 3, 1, 0x666666, "scroll_down")
+        --self.fileViewer[1]["scrollPos"] = 1
+    end
+end
+
+function np:run(ev, p1, p2, p3, p4, p5)
+    if ev == "touch" then
+        if self:clicked(p2, p3) then
+            self.needRender = true
+            if p4 == 0 then
+                local ret = self:buttonClicked(p2, p3)
+                if ret == "close_me" then
+                    st[self.id] = nil
+                    return true
+                elseif ret == "scale_me" then
+                    if self.isMax then
+                        self:resize(self.oldW, self.oldH)
+                        self:center()
+                        self:resetText()
+                        self:addScrollBar()
+                    else
+                        self:move(1, 1)
+                        self:resize(self.fsx, self.fsy - 1)
+                        self:resetText()
+                        self:addScrollBar()
+                    end
+                    self.isMax = not self.isMax
+                    self.needRender = true
+                    return true
+                elseif ret == "shrink_me" then
+                    self.renderBool = false
+                    return true
+                end
+                local smRet = self:subMenuClicked(p2, p3)
+                if smRet == "new_np" then
+                    
+                elseif smRet == "save_np" then
+                    self:saveText("mainText", self.path)
+                elseif smRet == "load_np" then
+                    
+                elseif smRet == "close_me" then
+                    needRender = false
+                    st[self.id] = nil
+                    return true
+                end
+                if self:textInputClicked(p2, p3) then
+                    return true
+                end
+                self.grabbed = not self.grabbed
+                return true
+            else
+                --right click code goes here
+            end
+        else
+            self.selected = false
+            self.grabbed = false
+            return false
+        end
+    elseif ev == "drag" then
+        if self.selected then
+            if self.grabbed then
+                term.clear()
+                self:move(p2, p3)
+                self.needRender = true
+                return true
+            end
+        end
+    elseif ev == "drop" then
+        self.grabbed = false
+        return false
+    elseif ev == "key_down" then
+        self:addScrollBar()
+        if self.selected then
+            self:addText(keyboard.keys[p3])
+        end
+    end
+    return false
+end
+
+function run()
+    while running do
+        local ev, p1, p2, p3, p4, p5 = event.pull(1, _, ev, p1, p2, p3, p4, p5)
+        np:run(ev, p1, p2, p3, p4, p5)
+        if np.needRender then
+            np:render()
+        end
+    end
+end
+
+np:addScrollBar()
+np:render()
+--run()
+st[np.id] = np

@@ -1,0 +1,179 @@
+local scr = require("screen")
+local shell = require("shell")
+local fs = require("filesystem")
+local term = require("term")
+local keyboard = require("keyboard")
+local comp = require("component")
+local gpu = comp.gpu
+local localPath = "/"
+local col = 0x009999
+
+fb = scr:newPane(fb, 60, 30)
+fb:center()
+fb.selected = true
+fb.id = #st + 1
+fb.priority = 9
+fb.label = "Porpoise"
+fb.isPane = true
+fb.colour = col
+fb:center()
+fb:box(1, 1, fb.width, fb.height, 0x999999, "scale")
+fb:box(1, 1, fb.width, 1, col, "scale")
+fb:centerText(1, 1, fb.width, col, 0x000000, fb.label)
+fb:box(2, 5, fb.width - 2, fb.height - 5, 0xFFFFFF, "scale")
+fb:addFileViewer(2, 5, fb.width - 2, fb.height - 5, 0xFFFFFF, localPath)
+fb:text(2, 3, 0x999999, 0x000000, "Path:")
+fb:inputBox("address", 8, 3, fb.width - 10, 1, "scale")
+fb:button("X", fb.width - 2, 1, 3, 1, 0xCCCCCC, "close_me")
+fb:button("^", fb.width - 3, 3, 3, 1, col, "navigate_up")
+fb.textInputs[1]["text"][1] = localPath
+fb.textInputs[1]["cursorX"] = #fb.textInputs[1]["text"][1] + 1
+fb.needRender = true
+fb.tEdit = "edit"
+
+function fb:checkFileViewer(ev, p1, p2, p3, p4, p5)
+    local xPos = self.xPos + self.fileViewer[1]["xPos"]
+    local yPos = self.yPos + self.fileViewer[1]["yPos"]
+    local xMax = yPos + self.fileViewer[1]["width"]
+    local yMax = yPos + self.fileViewer[1]["height"]
+    for k = 1, #self.fileViewer[1]["list"] do
+        local xVal = xPos + #self.fileViewer[1]["list"][k]
+        local yLine = yPos + k
+        if self.fileViewer[1]["scrollPos"] > 1 then
+            yLine = yLine - (self.fileViewer[1]["scrollPos"] - 1)
+        end
+        if p2 >= xPos and p2 <= xVal then
+            if p3 == yLine then
+                if fs.isDirectory(self.fileViewer[1]["path"]..self.fileViewer[1]["list"][k]) then
+                    self.fileViewer[1]["path"] = self.fileViewer[1]["path"]..self.fileViewer[1]["list"][k].."/"
+                    self.fileViewer[1]["list"] = self:assembleFileTable(self.fileViewer[1]["path"])
+                    if #self.fileViewer[1]["list"] > self.fileViewer[1]["height"] then
+                        self:addScrollBar()
+                    else
+                        self:removeScrollBar()
+                    end
+                    self.textInputs[1]["text"][1] = self.fileViewer[1]["path"]
+                    self.textInputs[1]["cursorX"] = #self.textInputs[1]["text"][1] + 1
+                    self.needRender = true
+                    return true
+                else
+                    if p4 == 1 then
+                        shell.execute(self.tEdit.." "..self.fileViewer[1]["path"]..self.fileViewer[1]["list"][k])
+                        return true
+                    else
+                        shell.execute(self.fileViewer[1]["path"]..self.fileViewer[1]["list"][k])
+                        return true
+                    end
+                end
+            end
+        end
+    end
+    if p2 >= xPos and p2 <= xMax then
+        if p3 >= yPos and p3 <= yMax then
+            return true
+        end
+    end
+    return false
+end
+
+function fb:addScrollBar()
+    self.buttonTab = nil
+    self:button("X", self.width - 2, 1, 3, 1, 0xCCCCCC, "close_me")
+    self:button("^", self.width - 3, 3, 3, 1, col, "navigate_up")
+    self:button("^", self.fileViewer[1]["width"] - 1, self.fileViewer[1]["yPos"] + 1, 3, 1, 0x666666, "scroll_up")
+    self:button(" ", self.fileViewer[1]["width"] - 1, self.fileViewer[1]["yPos"] + 2, 3, self.fileViewer[1]["height"] - 2, 0xCCCCCC, "scroll_toggle")
+    self:button("v", self.fileViewer[1]["width"] - 1, self.fileViewer[1]["yPos"] + self.fileViewer[1]["height"], 3, 1, 0x666666, "scroll_down")
+    self.fileViewer[1]["scrollPos"] = 1
+end
+
+function fb:removeScrollBar()
+    self.buttonTab = nil
+    self:button("X", self.width - 2, 1, 3, 1, 0xCCCCCC, "close_me")
+    self:button("^", self.width - 3, 3, 3, 1, col, "navigate_up")
+end
+
+function fb:run(ev, p1, p2, p3, p4, p5)
+    if ev == "touch" then
+        if self:clicked(p2, p3) then
+            self.needRender = true
+            if p4 == 0 then
+                ret = self:buttonClicked(p2, p3)
+                if ret == "navigate_up" then
+                    self.fileViewer[1]["path"] = fs.path(self.fileViewer[1]["path"])
+                    self.textInputs[1]["text"][1] = self.fileViewer[1]["path"]
+                    self.fileViewer[1]["list"] = self:assembleFileTable(self.fileViewer[1]["path"])
+                    if #self.fileViewer[1]["list"] > self.fileViewer[1]["height"] then
+                        self:addScrollBar()
+                    else
+                        self:removeScrollBar()
+                    end
+                    self.needRender = true
+                    return true
+                elseif ret == "scroll_up" then
+                    if self.fileViewer[1]["scrollPos"] > 1 then
+                        self.fileViewer[1]["scrollPos"] = self.fileViewer[1]["scrollPos"] - 1
+                    end
+                    self.needRender = true
+                    return true
+                elseif ret == "scroll_down" then
+                    if self.fileViewer[1]["scrollPos"] < #self.fileViewer[1]["list"] - (self.fileViewer[1]["height"] - 2) then
+                        self.fileViewer[1]["scrollPos"] = self.fileViewer[1]["scrollPos"] + 1
+                    end
+                    self.needRender = true
+                    return true
+                elseif ret == "close_me" then
+                    st[self.id] = nil
+                    return true
+                end
+                if self:checkFileViewer(ev, p1, p2, p3, p4, p5) then
+                    self.grabbed = false
+                    return true
+                end
+                if self:textInputClicked(p2, p3) then
+                    return true
+                end
+                self.grabbed = not self.grabbed
+                return true
+            else
+                if self:checkFileViewer(ev, p1, p2, p3, p4, p5) then
+                    self.selected = false
+                    self.grabbed = false
+                    return true
+                end
+            end
+        else
+            self.grabbed = false
+        end
+    elseif ev == "drag" then
+        if self.grabbed then
+            term.clear()
+            self:move(p2, p3)
+            self.needRender = true
+            return true
+        end
+    elseif ev == "drop" then
+        self.grabbed = false
+        for i = 1, #st do
+            st[i].needRender = true
+        end
+    elseif ev == "key_down" then
+        if self.selected then
+            local char = keyboard.keys[p3]
+            if char == "enter" then
+                self.fileViewer[1]["path"] = self.textInputs[1]["text"][1]
+                self.fileViewer[1]["list"] = self:assembleFileTable(self.fileViewer[1]["path"])
+                self.needRender = true
+                return true
+            end
+            self:addText(char)
+            return true
+        end
+    end
+    return false
+end
+
+if fs.exists("/bin/Ate") then
+    fb.tEdit = "Ate"
+end
+
+st[#st + 1] = fb

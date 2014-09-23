@@ -1,0 +1,145 @@
+local scr = require("screen")
+local fs = require("filesystem")
+local event = require("event")
+local shell = require("shell")
+local term = require("term")
+local comp = require("component")
+local gpu = comp.gpu
+
+--LOCAL CONSTANTS--
+
+local maxPanes = 10
+
+--LOCAL VARIABLES--
+
+local mx, my = gpu.getResolution()
+local running = true
+local needRender = false
+local localPath = shell.getWorkingDirectory()
+
+--GLOBAL VARIABLES--
+
+st = {}
+sCount = 1
+
+--TASKBAR SETUP--
+
+local tb = scr:newPane(tb, mx, 1)
+tb:move(1, my)
+tb:box(1, 1, mx, 1, 0x999999)
+tb.priority = 10
+tb.isMoveable = false
+
+function tb:run(ev, p1, p2, p3, p4, p5)
+    if ev == "touch" then
+        if self:clicked(p2, p3) then
+            ret = self:buttonClicked(p2, p3)
+            if ret == "time" then
+                
+            elseif type(ret) == "number" then
+                st[ret].renderBool = true
+                st[ret].needRender = true
+                sortStack(ret)
+                return true
+            end
+        else
+            return false
+        end
+    end
+end
+
+st[1] = tb
+
+--SCREEN MANAGER START--
+
+function drawScreen()
+    st[1].buttonTab = nil
+    st[1].needRender = true
+    st[1].priority = 10
+    if needRender then
+        term.clear()
+        for i = 2, #st do
+            st[i].needRender = true
+        end
+    end
+    local xPos = 1
+    for p = 1, maxPanes do
+        for i = 1, #st do
+            if st[i].priority == p then
+                if i ~= 1 then
+                    if st[i].selected then
+                        st[1]:button(st[i].label, xPos, 1, math.floor(mx/(#st - 1)), 1, 0x666666, i)
+                    else
+                        st[1]:button(st[i].label, xPos, 1, math.floor(mx/(#st - 1)), 1, 0x999999, i)
+                    end
+                    xPos = xPos + math.floor(mx/(#st - 1))
+                end
+                if st[i].needRender then
+                    st[i]:render()
+                    st[i].needRender = false
+                end
+            end
+        end
+    end
+    needRender = false
+end
+
+function adjustStack()
+    if #st < sCount then
+        needRender = true
+        for i = 1, #st do
+            if st[i] == nil then
+                for j = i + 1, #st do
+                    st[j - 1] = st[j]
+                    st[j] = nil
+                end
+            end
+        end
+    end
+    sCount = #st
+end
+
+function sortStack(num)
+    if num == 1 then return end
+    for i = 1, #st do
+        if i ~= num then
+            if st[i].priority > 1 then
+                st[i].priority = st[i].priority - 1
+                st[i].selected = false
+                st[i].grabbed = false
+            end
+        else
+            st[i].priority = 9
+            st[i].selected = true
+        end
+    end
+end
+
+function run()
+    local ev, p1, p2, p3, p4, p5 = event.pull(10, _, ev, p1, p2, p3, p4, p5)
+    if ev == "drop" then
+        for i = 1, #st do
+            st[i].grabbed = false
+            st[i].needRender = true
+        end
+    end
+    for p = maxPanes, 1, -1 do
+        for i = 1, #st do
+            if st[i].priority == p then
+                if st[i]:run(ev, p1, p2, p3, p4, p5) then
+                    sortStack(i)
+                    return
+                end
+            end
+        end
+    end
+    --add right click code here...
+end
+
+shell.execute("konSoul")
+
+while running do
+    drawScreen()
+    run()
+    adjustStack()
+end

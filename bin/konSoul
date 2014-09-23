@@ -1,0 +1,148 @@
+local scr = require("screen")
+local shell = require("shell")
+local fs = require("filesystem")
+local term = require("term")
+local comp = require("component")
+local keyboard = require("keyboard")
+local gpu = comp.gpu
+local col = 0x009999
+local bCol = 0x000000
+local tCol = 0x009900
+
+local cs = scr:newPane(cs, 60, 20)
+cs.selected = true
+cs.priority = 9
+cs.label = "konSoul"
+cs.isPane = true
+cs.colour = col
+cs.id = #st + 1
+cs.fsx, cs.fsy = gpu.getResolution()
+cs.needRender = true
+cs.upCount = 0
+cs:center()
+cs:box(1, 1, cs.width, cs.height, 0x999999, "scale")
+cs:box(1, 1, cs.width, 1, col, "scale")
+cs:centerText(1, 1, cs.width, col, 0x000000, "konSoul")
+cs:inputBox("shell", 2, 3, cs.width - 2, cs.height - 3, "scale", bCol, tCol)
+cs.textInputs[1]["text"][1] = shell.getWorkingDirectory().."# "
+cs.textInputs[1]["cursorY"] = 1
+cs.textInputs[1]["cursorX"] = #cs.textInputs[1]["text"][1] + 1
+
+function cs:newLine()
+    self.textInputs[1]["cursorY"] = self.textInputs[1]["cursorY"] + 1
+    self.textInputs[1]["text"][self.textInputs[1]["cursorY"]] = shell.getWorkingDirectory().."# "
+    self.textInputs[1]["cursorX"] = #self.textInputs[1]["text"][self.textInputs[1]["cursorY"]] + 1
+end
+
+function cs:run(ev, p1, p2, p3, p4, p5)
+    if ev == "touch" then
+        if self:clicked(p2, p3) then
+            self.needRender = true
+            if p4 == 0 then
+                if self:textInputClicked(p2, p3) then
+                    return true
+                end
+            else
+                
+            end
+            self.grabbed = not self.grabbed
+            return true
+        end
+    elseif ev == "drag" then
+        if self.grabbed then
+            term.clear()
+            self:move(p2, p3)
+            self.needRender = true
+            return true
+        end
+    elseif ev == "key_down" then
+        if self.selected then
+            local char = keyboard.keys[p3]
+            if char == "enter" then
+                local com = string.sub(self.textInputs[1]["text"][self.textInputs[1]["cursorY"]], #shell.getWorkingDirectory() + 2, #self.textInputs[1]["text"][self.textInputs[1]["cursorY"]])
+                if com == "clear" then
+                    self.textInputs = nil
+                    cs:inputBox("shell", 2, 3, cs.width - 2, cs.height - 3, "scale", bCol, tCol)
+                    self.textInputs[1]["text"][1] = shell.getWorkingDirectory().."# "
+                    self.textInputs[1]["cursorY"] = 1
+                    self.textInputs[1]["cursorX"] = #self.textInputs[1]["text"][1] + 1
+                    self:render()
+                    print(com)
+                    return true
+                end
+                local bool, err = shell.execute(com)
+                self:newLine()
+                if err ~= nil then
+                    self.textInputs[1]["text"][self.textInputs[1]["cursorY"]] = self.textInputs[1]["text"][self.textInputs[1]["cursorY"]].." "..err
+                    self:newLine()
+                end
+                self.needRender = true
+                self.upCount = 0
+                return true
+            elseif char == "back" then
+                gpu.setBackground(self.textInputs[1]["bgCol"])
+                gpu.setForeground(self.textInputs[1]["fgCol"])
+                if self.textInputs[1]["cursorX"] > #shell.getWorkingDirectory() + 3 then
+                    if self.textInputs[1]["cursorX"] <= #self.textInputs[1]["text"][self.textInputs[1]["cursorY"]] then
+                        local pLine = self.textInputs[1]["text"][self.textInputs[1]["cursorY"]]
+                        local preLine = string.sub(pLine, 1, self.textInputs[1]["cursorX"] - 2)
+                        local postLine = string.sub(pLine, self.textInputs[1]["cursorX"], #pLine)
+                        self.textInputs[1]["text"][self.textInputs[1]["cursorY"]] = preLine..postLine
+                        self.textInputs[1]["cursorX"] = self.textInputs[1]["cursorX"] - 1
+                        self.needRender = true
+                    else
+                        self.textInputs[1]["cursorX"] = self.textInputs[1]["cursorX"] - 1
+                        self.textInputs[1]["text"][self.textInputs[1]["cursorY"]] = string.sub(self.textInputs[1]["text"][self.textInputs[1]["cursorY"]], 1, #self.textInputs[1]["text"][self.textInputs[1]["cursorY"]] - 1)
+                        self:render()
+                    end
+                end
+                gpu.setBackground(0x000000)
+                gpu.setForeground(0xFFFFFF)
+                return true
+            elseif char == "up" then
+                if self.upCount < #self.textInputs[1]["text"] - 1 then
+                    self.upCount = self.upCount + 1
+                    self.textInputs[1]["text"][self.textInputs[1]["cursorY"]] = self.textInputs[1]["text"][self.textInputs[1]["cursorY"] - self.upCount]
+                    self.textInputs[1]["cursorX"] = #self.textInputs[1]["text"][self.textInputs[1]["cursorY"]] + 1
+                else
+                    self.textInputs[1]["text"][self.textInputs[1]["cursorY"]] = shell.getWorkingDirectory().."# "
+                end
+                self.needRender = true
+                return true
+            elseif char == "down" then
+                if self.upCount <= 0 then
+                    self.upCount = 0
+                    self.textInputs[1]["text"][self.textInputs[1]["cursorY"]] = shell.getWorkingDirectory().."# "
+                else
+                    self.upCount = self.upCount - 1
+                    self.textInputs[1]["text"][self.textInputs[1]["cursorY"]] = self.textInputs[1]["text"][self.textInputs[1]["cursorY"] - self.upCount]
+                end
+                self.needRender = true
+                return true
+            elseif char == "lshift" or char == "rshift" then
+                return true
+            elseif char == "left" then
+                if self.textInputs[1]["cursorX"] > #shell.getWorkingDirectory() + 3 then
+                    self.textInputs[1]["cursorX"] = self.textInputs[1]["cursorX"] - 1
+                end
+                self.needRender = true
+                return true
+            elseif char == "right" then
+                if self.textInputs[1]["cursorX"] < #self.textInputs[1]["text"][self.textInputs[1]["cursorY"]] + 1 then
+                    self.textInputs[1]["cursorX"] = self.textInputs[1]["cursorX"] + 1
+                end
+                self.needRender = true
+                return true
+            end
+            if keyboard.isShiftDown() then
+                self:addText(string.upper(keyboard.keys[p3]))
+            else
+                self:addText(keyboard.keys[p3])
+            end
+            return true
+        end
+    end
+    return false
+end
+
+st[cs.id] = cs
